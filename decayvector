@@ -1,0 +1,116 @@
+#! /usr/bin/env python3
+
+# sys
+import sys
+import numpy as np
+import time
+
+# pprint
+from acropolis.pprint import print_Yf
+from acropolis.pprint import print_error
+# models
+from acropolis.decay_vector_model import DecayVectorModel
+from acropolis.params import me
+
+start_time = time.time()
+
+# Extact the number of command line arguments...
+N = len(sys.argv)
+
+# ...and check if there are exactly nine
+if N != 10:
+    print_error("Would you kindly specify the following command-line arguments:\n"
+                + "         1. The mass of the decaying vector particle              [in MeV]\n"
+                + "         2. The lifetime of the decaying particle          [in s]\n"
+                + "         3. Some reference temperature T0                  [in MeV]\n"
+                + "         4. The number density of the decaying particle\n"
+                + "            (relative to photons) at T0\n"
+                + "         5. The branching ratio into electron-positron pairs\n"
+                + "         6. The branching ratio into muon-antimuon pairs\n"
+                + "         7. The branching ratio into pi-pi+ pairs\n"
+                + "         8. The branching ratio into pi0-photon pairs\n"
+                + "         9. The branching ratio into pi0 pi- p+")
+
+# Extract the input parameters
+params = [float(arg) for arg in sys.argv[1:]]
+
+# If vector boson mass is smaller than 2*me
+# give a warning and exit the program
+if params[0] < 2.*me:
+    print("Vector boson mass is below twice the electron mass. No decay.")
+    sys.exit()
+
+# If vector boson mass is greater than 1 GeV
+# give a warning and exit the program
+if params[0] > 1000.:
+    print("Vector boson mass exceeds 1 GeV beyond the validity of the current program.")
+    sys.exit()
+
+# Run the code
+Yf = DecayVectorModel(*params).run_disintegration()
+
+#Compare with the observed values
+obs = [0.245,2.547e-5,1.1e-5] #Yp, H2/H, He3/H  PDG2020
+sigmaobs = [0.003,0.025e-5,0.2e-5] #Yp, H2/H, He3/H    PDG2020
+
+#High values
+nHh = Yf[1,1] #hydrogen
+nDh = Yf[2,1] #deuterium
+nHe3h = Yf[4,1] #He-3
+nHe4h = Yf[5,1] #He-4
+nLi6h = Yf[6,1] #Li-6
+nLi7h = Yf[7,1] #Li-7
+        
+#Mean values
+nH = Yf[1,0] #hydrogen
+nD = Yf[2,0] #deuterium
+nHe3 = Yf[4,0] #He-3
+nHe4 = Yf[5,0] #He-4
+nLi6 = Yf[6,0] #Li-6
+nLi7 = Yf[7,0] #Li-7
+        
+#Low values
+nHl = Yf[1,2] #hydrogen
+nDl = Yf[2,2] #deuterium
+nHe3l = Yf[4,2] #He-3
+nHe4l = Yf[5,2] #He-4
+nLi6l = Yf[6,2] #Li-6
+nLi7l = Yf[7,2] #Li-7
+
+#Determine Yp, H2/H and He3/H
+Yp = 3.9737*nHe4
+H2H = nD/nH
+He3H = nHe3/nH
+        
+#Theoretical error estimation
+errH = np.max([np.abs(nH - nHl),np.abs(nH - nHh)])
+errD = np.max([np.abs(nD - nDl),np.abs(nD - nDh)])
+errHe3 = np.max([np.abs(nHe3 - nHe3l),np.abs(nHe3 - nHe3h)]) 
+errHe4 = np.max([np.abs(nHe4 - nHe4l),np.abs(nHe4 - nHe4h)])
+errYp = (Yp/nHe4)*errHe4
+errH2H = H2H*np.sqrt((errH/nH)**2 + (errD/nD)**2)
+errHe3H = He3H*np.sqrt((errH/nH)**2 + (errHe3/nHe3)**2)
+        
+        
+#chi2 calculation 
+chi2 = 0.
+chi2 = (Yp-obs[0])**2/(sigmaobs[0]**2 + errYp**2)
+chi2 = chi2 + (H2H-obs[1])**2/(sigmaobs[1]**2 + errH2H**2)
+#chi2 = chi2 + (He3H-obs[2])**2/(sigmaobs[2]**2 + errHe3H**2)  #Looks like PDG does not recommend using He3 due to poor observation
+        
+#2 sigma (95.45%) 
+#exclude = 1 if chi2 > 4.00 else 0 #d.o.f = 1
+exclude = 1 if chi2 > 6.18 else 0 #d.o.f = 2
+#exclude = 1 if chi2 > 8.03 else 0 #d.o.f = 3
+
+
+# Print the result
+#print("Results: p = %f, H2 = %f, He3 = %f, He4 = %f" %(nH,nD,nHe3,nHe4))
+print("Results: Yp = %f, H2/p = %f, He3/p = %f" %(Yp,H2H,He3H))
+
+if exclude == 1:
+    print("Excluded by the BBN measurements at 2 sigma (default: He3/p not considered).")
+else:
+    print("Not excluded by the BBN measurements at 2 sigma (default: He3/p not considered).")
+
+print("Runtime --- %f mins ---" % float((time.time() - start_time)/60.))
