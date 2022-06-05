@@ -1,0 +1,159 @@
+#! /usr/bin/env python3
+
+# sys
+import os
+import sys
+import numpy as np
+from scipy.special import zeta
+from scipy.interpolate import interp1d
+from acropolis.params import me, mmu, mpic, mpi
+import time
+
+# models
+from acropolis.decay_vector_model import DecayVectorModel
+from acropolis.scans import ScanParameter, BufferedScanner
+
+start_time = time.time()
+
+obs = [0.245,2.547e-5,1.1e-5] #Yp, H2/H, He3/H  PDG2020
+sigmaobs = [0.003,0.025e-5,0.2e-5] #Yp, H2/H, He3/H    PDG2020
+
+gstar = 10.633 #relativistics degree of freedom at T=1 MeV
+conv = np.pi**4/(45*zeta(3))*gstar #conversion factor s(T)/ngamma(T)
+
+#Define range of decaying vector mass mV [MeV]
+MVi=np.log10(2.*me)
+MVf=np.log10(100.)
+numMV=20
+#MV=np.linspace(10.**MVi,10.**MVf,numMV) #linear space
+MV=np.logspace(MVi,MVf,numMV) #logspace
+
+# If MVf < MVi 
+# give a warning and exit the program
+if MVf < MVi:
+    print("Invalid vector boson mass range: the final value is smaller than the initial value.")
+    sys.exit()
+
+# If vector boson mass is smaller than 2*me
+# give a warning and exit the program
+if MVi < np.log10(2.*me):
+    print("Vector boson mass is below twice the electron mass. No decay.")
+    sys.exit()
+
+# If vector boson mass is greater than 1 GeV
+# give a warning and exit the program
+if MVf > 3.:
+    print("Vector boson mass exceeds 1 GeV beyond the validity of the current program.")
+    sys.exit()
+
+
+#Read the file of branching ratio as a function of vector mass MV [MeV]
+#skip the first row for labels
+data = np.loadtxt("spec_data/darkphoton_MV_BR.dat", skiprows=1) #MV,bree,brmumu,brpipi,brpia,br3pi
+MV_read = np.log10(data[:,0]) #log10(MV) [MeV]
+br_read = []
+for i in range(5):
+    br_read.append(interp1d(MV_read, data[:,i+1] , kind='linear'))
+
+
+
+for j in range(numMV): 
+    if os.path.exists(f"results/MV_{j}.dat"):
+        continue
+
+    MVV = float(MV[j])
+
+    Yresults = []
+    Yfullresults = []
+    
+    #Define range of lifetime of tau [s] and number density of V over photon density n0 (in log) 
+    taui = 4
+    tauf = 5
+    numtau = 10 
+    n0i = np.log10(1e-10*conv/MVV) 
+    n0f = np.log10(1e-8*conv/MVV) 
+    numn0 = 20 
+    
+    res = BufferedScanner(DecayVectorModel,
+            mphi = MVV,
+            tau = ScanParameter(taui, tauf, numtau),
+            temp0 = 1.,
+            n0a = ScanParameter(n0i, n0f, numn0, fast=True),
+            bree = float(br_read[0](np.log10(MVV))),
+            brmumu = float(br_read[1](np.log10(MVV))),
+            brpipi = float(br_read[2](np.log10(MVV))),
+            brpia = float(br_read[3](np.log10(MVV))),
+            br3pi = float(br_read[4](np.log10(MVV)))
+            ).perform_scan(cores=10) #Specify the number of cores (one for each tau)
+
+    for i in range(numtau*numn0):
+        xtau = res[i,0]
+        xn0 = res[i,1]
+        
+        #High values
+        nHh = res[i,1+9+2] #hydrogen
+        nDh = res[i,1+9+3] #deuterium
+        nHe3h = res[i,1+9+5] #He-3
+        nHe4h = res[i,1+9+6] #He-4
+        nLi6h = res[i,1+9+7] #Li-6
+        nLi7h = res[i,1+9+8] #Li-7
+        
+        #Mean values
+        nH = res[i,1+2] #hydrogen
+        nD = res[i,1+3] #deuterium
+        nHe3 = res[i,1+5] #He-3
+        nHe4 = res[i,1+6] #He-4
+        nLi6 = res[i,1+7] #Li-6
+        nLi7 = res[i,1+8] #Li-7
+        
+        #Low values
+        nHl = res[i,1+18+2] #hydrogen
+        nDl = res[i,1+18+3] #deuterium
+        nHe3l = res[i,1+18+5] #He-3
+        nHe4l = res[i,1+18+6] #He-4
+        nLi6l = res[i,1+18+7] #Li-6
+        nLi7l = res[i,1+18+8] #Li-7
+        
+        #Determine Yp, H2/H and He3/H
+        Yp = 3.9737*nHe4
+        H2H = nD/nH
+        He3H = nHe3/nH
+        
+        #Theoretical error estimation
+        errH = np.max([np.abs(nH - nHl),np.abs(nH - nHh)])
+        errD = np.max([np.abs(nD - nDl),np.abs(nD - nDh)])
+        errHe3 = np.max([np.abs(nHe3 - nHe3l),np.abs(nHe3 - nHe3h)]) 
+        errHe4 = np.max([np.abs(nHe4 - nHe4l),np.abs(nHe4 - nHe4h)])
+        errYp = (Yp/nHe4)*errHe4
+        errH2H = H2H*np.sqrt((errH/nH)**2 + (errD/nD)**2)
+        errHe3H = He3H*np.sqrt((errH/nH)**2 + (errHe3/nHe3)**2)
+        
+        
+        #chi2 calculation 
+        chi2 = 0
+        chi2 = (Yp-obs[0])**2/(sigmaobs[0]**2 + errYp**2)
+        chi2 = chi2 + (H2H-obs[1])**2/(sigmaobs[1]**2 + errH2H**2)
+        #chi2 = chi2 + (He3H-obs[2])**2/(sigmaobs[2]**2 + errHe3H**2)  #Looks like PDG does not recommend using He3 due to poor observation
+        
+        #2 sigma (95.45%) 
+        #exclude = 1 if chi2 > 4.00 else 0 #d.o.f = 1
+        exclude = 1 if chi2 > 6.18 else 0 #d.o.f = 2
+        #exclude = 1 if chi2 > 8.03 else 0 #d.o.f = 3
+        
+        #n0 is converted to number density of cosmic entropy density xn0/conv
+        
+        #Full result (ma,tau,Ya,nH,nD,nHe3,nHe4,nLi6,nLi7,nHh,nDh,nHe3h,nHe4h,nLi6h,nLi7h,nHl,nDl,nHe3l,nHe4l,nLi6l,nLi7l)
+        Yfullresults.append([MVV,xtau,xn0/conv,nH,nD,nHe3,nHe4,nLi6,nLi7,nHh,nDh,nHe3h,nHe4h,nLi6h,nLi7h,nHl,nDl,nHe3l,nHe4l,nLi6l,nLi7l])
+        
+        #Processed result (ma,tau,Ya,Yp,H2/H,He3/H,chi2,if excluded)
+        Yresults.append([MVV,xtau,xn0/conv,Yp,H2H,He3H,chi2,exclude])
+
+    #The file is saved for each value of MV
+    #np.savetxt(f"results/full_MV_{j}.dat", Yfullresults, fmt='%.5e')
+    np.savetxt(f"results/MV_{j}.dat", Yresults, fmt='%.5e')
+    print(f"Results saved in files corresponding to the iteration number {j}")
+	
+	
+
+print("Runtime --- %f mins ---" % float((time.time() - start_time)/60.))
+
