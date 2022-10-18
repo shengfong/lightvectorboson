@@ -4,7 +4,7 @@ When using this code, please cite our work
 
 - **BBN Photodisintegration Constraints on Gravitationally Produced Vector Bosons**\
   Chee Sheng Fong, Moinul Hossain Rahat, Shaikh Saad\
-  https://arxiv.org/abs/22xx.xxxxx
+  https://arxiv.org/abs/2206.02802
   
   as well as the work by the creators of the original code [ACROPOLIS](https://github.com/hep-mh/acropolis).
   
@@ -44,7 +44,7 @@ The number density of $V$ over the photon density $n_V/n_\gamma$ is related to $
 
 $$\frac{n_V}{n_\gamma}(T_0) = \frac{\pi^4 g_\star(T_0)}{45\zeta(3)} Y_V.$$
 
-By default, the combined exclusion at 95\% CL for Helium-4 and deuterium considering the sum of theoretical and experimental errors in quadrature (see https://arxiv.org/abs/22xx.xxxxx for further details). An example of the output is as follows 
+By default, the combined exclusion at 95\% CL for Helium-4 and deuterium considering the sum of theoretical and experimental errors in quadrature (see https://arxiv.org/abs/2206.02802 for further details). An example of the output is as follows 
 ```
 Results:   Yp = 0.224415, H2/p = 0.000395, He3/p = 0.006490
 Excluded by the BBN measurements at 2 sigma 
